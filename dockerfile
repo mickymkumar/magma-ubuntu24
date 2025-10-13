@@ -26,7 +26,8 @@ RUN useradd -ms /bin/bash magma && echo "magma ALL=(ALL) NOPASSWD:ALL" >> /etc/s
 WORKDIR /home/magma
 VOLUME /home/magma
 
-RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
 
 # -----------------------------------------------------------------------------
 # Stage 2: Magma source setup
@@ -53,7 +54,8 @@ RUN wget -O /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/relea
     && ln -s /usr/local/bin/bazelisk /usr/bin/bazel
 
 WORKDIR /magma
-RUN bazel build //lte/gateway/release:python_executables_tar //lte/gateway/release:dhcp_helper_cli_tar
+RUN bazel build //lte/gateway/release:python_executables_tar \
+               //lte/gateway/release:dhcp_helper_cli_tar
 
 # -----------------------------------------------------------------------------
 # Stage 4: C build (sessiond, sctpd, etc.)
@@ -75,7 +77,6 @@ RUN wget -P /usr/sbin https://github.com/bazelbuild/bazelisk/releases/download/v
     && chmod +x /usr/sbin/bazelisk-linux-"${DEB_PORT}" \
     && ln -s /usr/sbin/bazelisk-linux-"${DEB_PORT}" /usr/sbin/bazel
 
-# Build external deps and Magma C components
 WORKDIR /magma
 RUN bazel build \
     @com_github_grpc_grpc//:grpc++ \
@@ -85,8 +86,7 @@ RUN bazel build \
     @github_nlohmann_json//:json \
     @sentry_native//:sentry
 
-RUN bazel build \
-    --config=production \
+RUN bazel build --config=production \
     //lte/gateway/c/sctpd/src:sctpd \
     //lte/gateway/c/connection_tracker/src:connectiond \
     //lte/gateway/c/li_agent/src/liagentd \
@@ -99,8 +99,8 @@ RUN bazel build \
 FROM ubuntu:24.04 AS magma-runtime
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Install runtime dependencies (OVS updated for Ubuntu 24.04)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
     python3 python3-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
@@ -109,12 +109,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-# IP forwarding must be enabled at runtime, not during build
 
-# Copy Magma source and Python env
+# Copy Python env and Magma source
 COPY --from=magma-python /magma /magma
 COPY --from=base /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy built C binaries
 COPY --from=magma-c /magma/bazel-bin/lte/gateway/c/session_manager/sessiond /usr/local/bin/sessiond
@@ -123,8 +121,8 @@ COPY --from=magma-c /magma/bazel-bin/lte/gateway/c/connection_tracker/src/connec
 COPY --from=magma-c /magma/bazel-bin/lte/gateway/c/li_agent/src/liagentd /usr/local/bin/liagentd
 COPY --from=magma-c /magma/bazel-bin/lte/gateway/c/core/agw_of /usr/local/bin/oai_mme
 
-# Add placeholder scripts for OVS
-RUN mkdir -p /usr/local/bin && mkdir -p /magma/openvswitch
+# Placeholder OVS scripts
+RUN mkdir -p /usr/local/bin /magma/openvswitch
 RUN echo '#!/bin/bash\necho "OVS healthcheck: OK"' > /usr/local/bin/healthcheck.sh && chmod +x /usr/local/bin/healthcheck.sh
 RUN echo '#!/bin/bash\necho "Starting Magma container..."\ntail -f /dev/null' > /entrypoint.sh && chmod +x /entrypoint.sh
 
