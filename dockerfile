@@ -49,9 +49,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Bazelisk
-RUN wget -O /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
+RUN wget -O /usr/local/bin/bazelisk \
+    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazelisk \
-    && ln -s /usr/local/bin/bazelisk /usr/bin/bazel
+    && ln -s /usr/local/bin/bazelisk /usr/sbin/bazel
+
 
 WORKDIR /magma
 RUN bazel build //lte/gateway/release:python_executables_tar \
