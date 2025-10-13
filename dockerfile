@@ -109,7 +109,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-RUN echo 1 > /proc/sys/net/ipv4/ip_forward
+# IP forwarding must be enabled at runtime, not during build
 
 # Copy Magma source and Python env
 COPY --from=magma-python /magma /magma
