@@ -1,5 +1,5 @@
 ################################################################################
-# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready)
+# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready) - Fixed for Python 3.11
 ################################################################################
 
 ARG CPU_ARCH=x86_64
@@ -8,19 +8,26 @@ ARG OS_DIST=ubuntu
 ARG OS_RELEASE=noble
 
 # -----------------------------------------------------------------------------
-# Stage 1: Base builder (system + python)
+# Stage 1: Base builder (system + python 3.11)
 # -----------------------------------------------------------------------------
 FROM ${OS_DIST}:${OS_RELEASE} AS base
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Install Python 3.11 from deadsnakes PPA
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    sudo net-tools iproute2 bridge-utils iputils-ping tcpdump iptables \
-    python3 python3-venv python3-dev python3-pip \
-    curl wget git unzip make build-essential cmake pkg-config software-properties-common \
+    software-properties-common curl wget lsb-release sudo \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3.11-dev python3.11-distutils python3-pip \
+    git unzip make build-essential cmake pkg-config \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libgmp-dev zlib1g-dev rsync zip \
-    ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
+    ifupdown gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Make python3 point to python3.11
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
 RUN useradd -ms /bin/bash magma && echo "magma ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 WORKDIR /home/magma
@@ -45,7 +52,7 @@ ENV TZ=Etc/UTC
 ENV PIP_CACHE_HOME="~/.pipcache"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io git lsb-release libsystemd-dev pkg-config python3-dev python3-pip sudo wget \
+    docker.io git lsb-release libsystemd-dev pkg-config sudo wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Bazelisk
@@ -53,7 +60,6 @@ RUN wget -O /usr/local/bin/bazelisk \
     https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazelisk \
     && ln -s /usr/local/bin/bazelisk /usr/sbin/bazel
-
 
 WORKDIR /magma
 RUN bazel build //lte/gateway/release:python_executables_tar \
@@ -74,11 +80,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libprotoc-dev libsctp-dev libsqlite3-dev libssl-dev libtspi-dev libtool libxml2-dev libxslt-dev \
     libyaml-cpp-dev protobuf-compiler unzip uuid-dev sudo && rm -rf /var/lib/apt/lists/*
 
-# Bazelisk install (fixed)
-RUN wget -O /usr/local/bin/bazelisk \
-    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
-    && chmod +x /usr/local/bin/bazelisk \
-    && ln -s /usr/local/bin/bazelisk /usr/sbin/bazel
+# Bazelisk install
+RUN wget -P /usr/sbin https://github.com/bazelbuild/bazelisk/releases/download/v1.10.0/bazelisk-linux-"${DEB_PORT}" \
+    && chmod +x /usr/sbin/bazelisk-linux-"${DEB_PORT}" \
+    && ln -s /usr/sbin/bazelisk-linux-"${DEB_PORT}" /usr/sbin/bazel
 
 WORKDIR /magma
 RUN bazel build \
@@ -96,7 +101,6 @@ RUN bazel build --config=production \
     //lte/gateway/c/session_manager:sessiond \
     //lte/gateway/c/core/agw_of
 
-
 # -----------------------------------------------------------------------------
 # Stage 5: Runtime (OVS + Python + C)
 # -----------------------------------------------------------------------------
@@ -107,7 +111,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
-    python3 python3-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
+    python3.11 python3.11-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libssl-dev libpcap-dev \
     openvswitch-switch openvswitch-common \
     && rm -rf /var/lib/apt/lists/*
