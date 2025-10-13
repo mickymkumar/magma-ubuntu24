@@ -1,5 +1,5 @@
 ################################################################################
-# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready) - Fixed for Python 3.11
+# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready)
 ################################################################################
 
 ARG CPU_ARCH=x86_64
@@ -8,31 +8,28 @@ ARG OS_DIST=ubuntu
 ARG OS_RELEASE=noble
 
 # -----------------------------------------------------------------------------
-# Stage 1: Base builder (system + python 3.11)
+# Stage 1: Base builder (system + python)
 # -----------------------------------------------------------------------------
 FROM ${OS_DIST}:${OS_RELEASE} AS base
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python 3.11 from deadsnakes PPA
+# Install system packages and Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common curl wget lsb-release sudo \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 python3.11-venv python3.11-dev python3.11-distutils python3-pip \
-    git unzip make build-essential cmake pkg-config \
-    libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libgmp-dev zlib1g-dev rsync zip \
-    ifupdown gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
+    sudo net-tools iproute2 bridge-utils iputils-ping tcpdump iptables \
+    software-properties-common curl wget git unzip make build-essential cmake \
+    pkg-config libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev \
+    libgmp-dev zlib1g-dev rsync zip ifupdown lsb-release gnupg supervisor \
+    autoconf automake libtool lksctp-tools libsctp-dev tzdata \
+    python3 python3-venv python3-dev python3-pip \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Make python3 point to python3.11
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
-
+# Create magma user
 RUN useradd -ms /bin/bash magma && echo "magma ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 WORKDIR /home/magma
 VOLUME /home/magma
 
+# Create Python virtual environment
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
 
@@ -51,11 +48,12 @@ ENV MAGMA_DEV_MODE=0
 ENV TZ=Etc/UTC
 ENV PIP_CACHE_HOME="~/.pipcache"
 
+# Install Bazel and required packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io git lsb-release libsystemd-dev pkg-config sudo wget \
+    docker.io git lsb-release libsystemd-dev pkg-config python3-dev python3-pip sudo wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Bazelisk
+# Install Bazelisk
 RUN wget -O /usr/local/bin/bazelisk \
     https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazelisk \
@@ -80,20 +78,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libprotoc-dev libsctp-dev libsqlite3-dev libssl-dev libtspi-dev libtool libxml2-dev libxslt-dev \
     libyaml-cpp-dev protobuf-compiler unzip uuid-dev sudo && rm -rf /var/lib/apt/lists/*
 
-# Bazelisk install
+# Install Bazelisk
 RUN wget -P /usr/sbin https://github.com/bazelbuild/bazelisk/releases/download/v1.10.0/bazelisk-linux-"${DEB_PORT}" \
     && chmod +x /usr/sbin/bazelisk-linux-"${DEB_PORT}" \
     && ln -s /usr/sbin/bazelisk-linux-"${DEB_PORT}" /usr/sbin/bazel
 
 WORKDIR /magma
-RUN bazel build \
-    @com_github_grpc_grpc//:grpc++ \
-    @com_google_protobuf//:protobuf \
-    @prometheus_cpp//:prometheus-cpp \
-    @yaml-cpp//:yaml-cpp \
-    @github_nlohmann_json//:json \
-    @sentry_native//:sentry
-
 RUN bazel build --config=production \
     //lte/gateway/c/sctpd/src:sctpd \
     //lte/gateway/c/connection_tracker/src:connectiond \
@@ -109,16 +99,18 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Install runtime packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
-    python3.11 python3.11-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
+    software-properties-common \
+    python3 python3-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libssl-dev libpcap-dev \
     openvswitch-switch openvswitch-common \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Copy Python env and Magma source
+# Copy Python environment and Magma source
 COPY --from=magma-python /magma /magma
 COPY --from=base /opt/venv /opt/venv
 
@@ -132,7 +124,14 @@ COPY --from=magma-c /magma/bazel-bin/lte/gateway/c/core/agw_of /usr/local/bin/oa
 # Placeholder OVS scripts
 RUN mkdir -p /usr/local/bin /magma/openvswitch
 RUN echo '#!/bin/bash\necho "OVS healthcheck: OK"' > /usr/local/bin/healthcheck.sh && chmod +x /usr/local/bin/healthcheck.sh
-RUN echo '#!/bin/bash\necho "Starting Magma container..."\ntail -f /dev/null' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN echo '#!/bin/bash\n\
+echo "Starting Magma services..."\n\
+/usr/local/bin/sessiond &\n\
+/usr/local/bin/sctpd &\n\
+/usr/local/bin/connectiond &\n\
+/usr/local/bin/liagentd &\n\
+/usr/local/bin/oai_mme &\n\
+tail -f /dev/null' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 WORKDIR /magma
 ENTRYPOINT ["/entrypoint.sh"]
