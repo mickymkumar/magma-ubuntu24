@@ -74,10 +74,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libprotoc-dev libsctp-dev libsqlite3-dev libssl-dev libtspi-dev libtool libxml2-dev libxslt-dev \
     libyaml-cpp-dev protobuf-compiler unzip uuid-dev sudo && rm -rf /var/lib/apt/lists/*
 
-# Bazelisk install
-RUN wget -P /usr/sbin https://github.com/bazelbuild/bazelisk/releases/download/v1.10.0/bazelisk-linux-"${DEB_PORT}" \
-    && chmod +x /usr/sbin/bazelisk-linux-"${DEB_PORT}" \
-    && ln -s /usr/sbin/bazelisk-linux-"${DEB_PORT}" /usr/sbin/bazel
+# Bazelisk install (fixed)
+RUN wget -O /usr/local/bin/bazelisk \
+    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
+    && chmod +x /usr/local/bin/bazelisk \
+    && ln -s /usr/local/bin/bazelisk /usr/sbin/bazel
 
 WORKDIR /magma
 RUN bazel build \
@@ -94,6 +95,7 @@ RUN bazel build --config=production \
     //lte/gateway/c/li_agent/src/liagentd \
     //lte/gateway/c/session_manager:sessiond \
     //lte/gateway/c/core/agw_of
+
 
 # -----------------------------------------------------------------------------
 # Stage 5: Runtime (OVS + Python + C)
