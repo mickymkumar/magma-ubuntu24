@@ -1,11 +1,12 @@
+# --- Base Image ---
 FROM ubuntu:24.04
 
-# Environment
+# --- Environment Variables ---
 ENV DEBIAN_FRONTEND=noninteractive
 ENV MAGMA_ROOT=/magma
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install system dependencies
+# --- Install System Dependencies ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
         software-properties-common \
         wget \
@@ -26,31 +27,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Python virtual environment
+# --- Python Virtual Environment ---
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel
 
-# Install Bazelisk
+# --- Install Bazelisk (Bazel wrapper) ---
 RUN wget -O /usr/local/bin/bazelisk \
         https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazelisk
 
-# Set working directory
+# --- Set Working Directory ---
 WORKDIR /magma
 
-# Clone Magma
+# --- Clone Magma Repository ---
 RUN git clone https://github.com/magma/magma.git /magma
 
-# Fix library paths for Bazel
+# --- Fix Library Paths for Bazel ---
 RUN ln -sf /usr/lib/x86_64-linux-gnu/libglog.so /usr/lib/x86_64-linux-gnu/libglog.so.0 \
     && ln -sf /usr/lib/x86_64-linux-gnu/libsystemd.so /usr/lib/x86_64-linux-gnu/libsystemd.so.0
 
-# Build C components with Bazel
+# --- Build C Components with Bazel ---
 RUN LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu \
     bazel build --config=production \
         //lte/gateway/c/sctpd/src:sctpd \
         //lte/gateway/c/connection_tracker/src:connectiond \
         //lte/gateway/c/session_manager:sessiond
 
-# Default workdir
+# --- Set Default Workdir ---
 WORKDIR /magma/lte/gateway
