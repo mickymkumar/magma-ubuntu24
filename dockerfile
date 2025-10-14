@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
     sudo curl wget git unzip make build-essential cmake pkg-config \
     software-properties-common tzdata \
-    python3.11 python3.11-venv python3-pip python3.11-dev \
+    python3 python3-venv python3-pip python3-dev \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev \
     libgmp-dev zlib1g-dev rsync zip \
     redis-server \
@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Setup Python virtual environment ---
-RUN python3.11 -m venv /opt/venv \
+RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel
 
 # --- Install Bazelisk (Bazel launcher) ---
