@@ -1,44 +1,85 @@
 ################################################################################
-# Step 5: Builder image for C binaries and Magma proto files
+# Magma Core Dockerfile for Ubuntu 24.04
+# Combines Python and C builder images with runtime images
 ################################################################################
-ARG CPU_ARCH=x86_64
-ARG DEB_PORT=amd64
-ARG OS_DIST=ubuntu
-ARG OS_RELEASE=24.04
-ARG EXTRA_REPO=https://linuxfoundation.jfrog.io/artifactory/magma-packages-test
-ARG CLANG_VERSION=3.8
-ARG FEATURES=mme_oai
 
-FROM $OS_DIST:$OS_RELEASE AS builder_c
-ARG CPU_ARCH
-ARG DEB_PORT
-ARG OS_DIST
-ARG OS_RELEASE
-ARG EXTRA_REPO
-ARG CLANG_VERSION
+# -----------------------------------------------------------------------------
+# Step 0: Base image and update
+# -----------------------------------------------------------------------------
+FROM ubuntu:24.04 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/Toronto
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && apt-get update && apt-get upgrade -y \
+    && apt-get install -y \
+        software-properties-common \
+        curl \
+        wget \
+        git \
+        lsb-release \
+        ca-certificates \
+        apt-transport-https \
+        gnupg \
+        build-essential \
+        cmake \
+        pkg-config \
+        sudo \
+        python3-pip \
+        python3-venv \
+        unzip \
+        tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Step 1: Clone Magma Core (placeholder)
+# -----------------------------------------------------------------------------
+# Uncomment and set the correct repo URL and branch
+# RUN git clone --recursive https://github.com/magma/magma.git /magma
+# WORKDIR /magma
+
+# -----------------------------------------------------------------------------
+# Step 2: Python builder image
+# -----------------------------------------------------------------------------
+FROM base AS builder_python
+
+ENV MAGMA_ROOT=/magma
+ENV PIP_CACHE_HOME="~/.pipcache"
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    docker.io \
+    libsystemd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download Bazel
+RUN wget -P /usr/sbin https://github.com/bazelbuild/bazelisk/releases/download/v1.10.0/bazelisk-linux-amd64 \
+    && chmod +x /usr/sbin/bazelisk-linux-amd64 \
+    && ln -s /usr/sbin/bazelisk-linux-amd64 /usr/sbin/bazel
+
+# Placeholder: copy Magma Python files
+# COPY ./lte/gateway/python $MAGMA_ROOT/lte/gateway/python
+# COPY ./orc8r/gateway/python $MAGMA_ROOT/orc8r/gateway/python
+# COPY ./protos $MAGMA_ROOT/protos
+
+WORKDIR /magma
+# Placeholder build
+# RUN bazel build //lte/gateway/release:python_executables_tar
+
+# -----------------------------------------------------------------------------
+# Step 3: C builder image
+# -----------------------------------------------------------------------------
+FROM base AS builder_c
 
 ENV MAGMA_ROOT=/magma
 ENV C_BUILD=/build/c
 ENV OAI_BUILD=$C_BUILD/oai
-ENV TZ=America/Toronto
 ENV CCACHE_DIR=${MAGMA_ROOT}/.cache/gateway/ccache
 ENV MAGMA_DEV_MODE=0
 ENV XDG_CACHE_HOME=${MAGMA_ROOT}/.cache
 
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-# Temporary GPG workaround
-RUN echo "Acquire::AllowInsecureRepositories true;" > /etc/apt/apt.conf.d/99AllowInsecureRepositories && \
-    echo "APT::Get::AllowUnauthenticated true;" >> /etc/apt/apt.conf.d/99AllowInsecureRepositories
-
-# Base tools and Bazelisk
-RUN apt-get update && apt-get install -y \
-    apt-utils software-properties-common apt-transport-https gnupg wget \
-    && wget -P /usr/sbin https://github.com/bazelbuild/bazelisk/releases/download/v1.10.0/bazelisk-linux-"${DEB_PORT}" \
-    && chmod +x /usr/sbin/bazelisk-linux-"${DEB_PORT}" \
-    && ln -s /usr/sbin/bazelisk-linux-"${DEB_PORT}" /usr/sbin/bazel
-
-# Build dependencies
+# Install dependencies for C build
 RUN apt-get update && apt-get install -y \
     autoconf autogen build-essential ccache check cmake curl git \
     libboost-chrono-dev libboost-context-dev libboost-program-options-dev \
@@ -50,95 +91,43 @@ RUN apt-get update && apt-get install -y \
     protobuf-compiler python3-pip sudo unzip uuid-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Add Magma repo (trusted)
-COPY keys/linux_foundation_registry_key.asc /etc/apt/trusted.gpg.d/magma.asc
-RUN echo "deb [trusted=yes] ${EXTRA_REPO} focal-ci main" > /etc/apt/sources.list.d/magma.list
+WORKDIR /magma
 
-# Install C runtime deps
-RUN apt-get update && apt-get install -y \
-    grpc-dev libfolly-dev liblfds710 magma-cpp-redis magma-libfluid \
-    oai-asn1c oai-freediameter oai-gnutls oai-nettle prometheus-cpp-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm /etc/apt/sources.list.d/magma.list
+# Placeholder: copy Bazel files and proto files
+# COPY WORKSPACE.bazel BUILD.bazel .bazelignore .bazelrc .bazelversion $MAGMA_ROOT/
+# COPY bazel/ $MAGMA_ROOT/bazel
+# COPY feg/protos lte/protos orc8r/protos protos $MAGMA_ROOT/
+# COPY lte/gateway/c $MAGMA_ROOT/lte/gateway/c
+# COPY orc8r/gateway/c/common $MAGMA_ROOT/orc8r/gateway/c/common
 
-WORKDIR $MAGMA_ROOT
+# Placeholder build
+# RUN bazel build --config=production //lte/gateway/c/session_manager/sessiond
 
-# Copy Bazel files
-COPY WORKSPACE.bazel BUILD.bazel .bazelignore .bazelrc .bazelversion $MAGMA_ROOT/
-COPY bazel/ $MAGMA_ROOT/bazel
-COPY third_party/build/patches/libfluid/ $MAGMA_ROOT/third_party/build/patches/libfluid/
-
-# Build external dependencies
-RUN bazel build \
-    @com_github_grpc_grpc//:grpc++ \
-    @com_google_protobuf//:protobuf \
-    @prometheus_cpp//:prometheus-cpp \
-    @yaml-cpp//:yaml-cpp \
-    @github_nlohmann_json//:json \
-    @sentry_native//:sentry
-
-# Copy proto files
-COPY feg/protos $MAGMA_ROOT/feg/protos
-COPY feg/gateway/services/aaa/protos $MAGMA_ROOT/feg/gateway/services/aaa/protos
-COPY lte/protos $MAGMA_ROOT/lte/protos
-COPY orc8r/protos $MAGMA_ROOT/orc8r/protos
-COPY protos $MAGMA_ROOT/protos
-
-# Copy C code and scripts
-COPY orc8r/gateway/c/common $MAGMA_ROOT/orc8r/gateway/c/common
-COPY lte/gateway/c $MAGMA_ROOT/lte/gateway/c
-COPY lte/gateway/python/scripts $MAGMA_ROOT/lte/gateway/python/scripts
-COPY lte/gateway/docker $MAGMA_ROOT/lte/gateway/docker
-COPY lte/gateway/docker/mme/configs/ $MAGMA_ROOT/lte/gateway/docker/configs/
-
-# Build C binaries
-RUN bazel build --config=production \
-    //lte/gateway/c/sctpd/src:sctpd \
-    //lte/gateway/c/connection_tracker/src:connectiond \
-    //lte/gateway/c/li_agent/src:liagentd \
-    //lte/gateway/c/session_manager:sessiond \
-    //lte/gateway/c/core:agw_of
-
-# Copy configs
-COPY lte/gateway/configs $MAGMA_ROOT/lte/gateway/configs
-
-################################################################################
-# Step 6: Dev/Production Gateway C Image
-################################################################################
-FROM $OS_DIST:$OS_RELEASE AS gateway_c
+# -----------------------------------------------------------------------------
+# Step 4: Runtime image for Python + C
+# -----------------------------------------------------------------------------
+FROM base AS gateway_runtime
 
 ENV MAGMA_ROOT=/magma
-ENV C_BUILD=/build/c
 ENV TZ=America/Toronto
-
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Temporary GPG workaround
-RUN echo "Acquire::AllowInsecureRepositories true;" > /etc/apt/apt.conf.d/99AllowInsecureRepositories && \
-    echo "APT::Get::AllowUnauthenticated true;" >> /etc/apt/apt.conf.d/99AllowUnauthenticated
-
 # Install runtime dependencies
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    apt-transport-https apt-utils ca-certificates gnupg \
-    iproute2 iptables libgoogle-glog-dev libidn11-dev libmnl-dev libprotoc-dev \
-    libsctp-dev libtspi1 libyaml-cpp-dev net-tools netcat openssl psmisc sudo \
-    tshark tzdata wget \
-    libopenvswitch openvswitch-common openvswitch-datapath-dkms openvswitch-switch \
+RUN apt-get update && apt-get install -y \
+    docker.io ethtool iproute2 iptables net-tools netcat \
+    openvswitch-switch openvswitch-common openvswitch-datapath-dkms \
+    redis-server tzdata wget sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pre-built shared libraries from builder
-COPY --from=builder_c /usr/lib/${CPU_ARCH}-linux-gnu/lib* /usr/lib/${CPU_ARCH}-linux-gnu/
-COPY --from=builder_c /usr/local/lib/lib* /usr/local/lib/
-RUN ldconfig 2> /dev/null
+WORKDIR /usr/local/bin
 
-# Copy C binaries
-COPY --from=builder_c $MAGMA_ROOT/bazel-bin/lte/gateway/c/session_manager/sessiond /usr/local/bin/sessiond
-COPY --from=builder_c $MAGMA_ROOT/bazel-bin/lte/gateway/c/sctpd/src/sctpd /usr/local/bin/sctpd
-COPY --from=builder_c $MAGMA_ROOT/bazel-bin/lte/gateway/c/connection_tracker/src/connectiond /usr/local/bin/connectiond
-COPY --from=builder_c $MAGMA_ROOT/bazel-bin/lte/gateway/c/li_agent/src/liagentd /usr/local/bin/liagentd
-COPY --from=builder_c $MAGMA_ROOT/bazel-bin/lte/gateway/c/core/agw_of /usr/local/bin/oai_mme
+# Placeholder: copy Python and C build artifacts
+# COPY --from=builder_python /magma/bazel-bin/lte/gateway/release/magma_python_executables.tar.gz /tmp/
+# COPY --from=builder_c /magma/bazel-bin/lte/gateway/c/session_manager/sessiond /usr/local/bin/sessiond
 
-# Copy configs
-COPY lte/gateway/configs /etc/magma
-COPY orc8r/gateway/configs/templates /etc/magma/templates
-COPY lte/gateway/deploy/roles/magma/files/magma-create-gtp-port.sh /usr/local/bin/
+# Placeholder: copy configs
+# COPY lte/gateway/configs /etc/magma
+# COPY orc8r/gateway/configs/templates /etc/magma/templates
+# COPY lte/gateway/deploy/roles/magma/files/magma-create-gtp-port.sh /usr/local/bin/
+
+ENTRYPOINT ["/bin/bash"]
