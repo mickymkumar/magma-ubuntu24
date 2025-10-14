@@ -1,6 +1,6 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
-# Fully self-contained: builds C & Python components, OVS, and Magma services
+# Builds C & Python components, OVS, and Magma services with DKMS support
 ################################################################################
 
 FROM ubuntu:24.04
@@ -23,14 +23,13 @@ RUN apt-get update && apt-get upgrade -y && \
     python3 python3-pip python3-venv python3-setuptools python3-dev \
     net-tools iproute2 iputils-ping dnsutils sudo \
     openvswitch-switch openvswitch-common \
-    autoconf automake libtool pkg-config m4 && \
+    autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
 # Install Bazel (required for C builds)
 # -----------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y curl gnupg && \
-    curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
+RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
     apt-get update && apt-get install -y bazel && \
     rm -rf /var/lib/apt/lists/*
@@ -44,8 +43,6 @@ RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
 # Build Magma C Components (AGW, Orc8r, FeG)
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}
-
-# Bazel build for AGW
 RUN bazel build //lte/gateway/c/session_manager:sessiond \
                //lte/gateway/c/sctpd/src:sctpd \
                //lte/gateway/c/connection_tracker/src:connectiond \
@@ -63,8 +60,8 @@ RUN python3 -m pip install --upgrade pip && \
 # Setup OVS Service
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
-RUN cp ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch/healthcheck.sh /usr/local/bin/healthcheck.sh && \
-    cp ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch/entrypoint.sh /entrypoint.sh && \
+RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
+    cp entrypoint.sh /entrypoint.sh && \
     chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
 
 # -----------------------------------------------------------------------------
