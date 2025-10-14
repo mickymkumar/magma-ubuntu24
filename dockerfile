@@ -8,8 +8,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 ENV MAGMA_ROOT=/magma
 ENV USE_BAZEL_PYTHON=/usr/bin/python3.10
 
-# --- Install OS packages ---
-# --- Install OS packages ---
+# --- Install OS packages and build tools ---
 RUN apt-get update && apt-get install -y \
         software-properties-common \
         python3-apt \
@@ -19,15 +18,20 @@ RUN apt-get update && apt-get install -y \
         gnupg \
         ca-certificates \
         git \
-    && add-apt-repository universe \
-    && apt-get update && apt-get install -y \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        pkg-config \
+        zlib1g-dev \
+        libssl-dev \
         libgoogle-glog-dev \
         libsystemd-dev \
         libdouble-conversion-dev \
         libunwind-dev \
         libgflags-dev \
+    && add-apt-repository universe \
     && rm -rf /var/lib/apt/lists/*
-
 
 # --- Add Deadsnakes PPA and install Python 3.10 ---
 RUN add-apt-repository ppa:deadsnakes/ppa -y \
