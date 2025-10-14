@@ -48,8 +48,8 @@ RUN git clone https://github.com/magma/magma.git $MAGMA_ROOT
 RUN bazel build --config=production \
     //lte/gateway/c/sctpd/src:sctpd \
     //lte/gateway/c/connection_tracker/src:connectiond \
-    //lte/gateway/c/session_manager:sessiond \
-    //lte/gateway/c/core/agw_of
+    //lte/gateway/c/session_manager:sessiond
+
 
 # --- Bazel build for Python components ---
 RUN bazel build //lte/gateway/release:python_executables_tar \
