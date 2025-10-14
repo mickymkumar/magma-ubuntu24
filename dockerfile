@@ -16,7 +16,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo net-tools iproute2 bridge-utils iputils-ping tcpdump iptables \
-    python3 python3-venv python3-dev python3-pip python3-distutils \
+    python3 python3-venv python3-dev python3-pip \
     curl wget git unzip make build-essential cmake pkg-config software-properties-common \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libgmp-dev zlib1g-dev rsync zip \
     ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
