@@ -52,6 +52,10 @@ RUN wget -O /usr/local/bin/bazelisk \
     && chmod +x /usr/local/bin/bazelisk \
     && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
 
+# --- Fix library names for Bazel ---
+RUN ln -s /usr/lib/x86_64-linux-gnu/libglog.so /usr/lib/x86_64-linux-gnu/libglog.so.0 \
+    && ln -s /usr/lib/x86_64-linux-gnu/libsystemd.so /usr/lib/x86_64-linux-gnu/libsystemd.so.0
+
 # --- Create work directory and clone Magma ---
 WORKDIR $MAGMA_ROOT
 RUN git clone https://github.com/magma/magma.git $MAGMA_ROOT
