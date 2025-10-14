@@ -6,20 +6,28 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV PATH="/opt/venv/bin:$PATH"
 ENV MAGMA_ROOT=/magma
+ENV USE_BAZEL_PYTHON=/usr/bin/python3.10
 
 # --- Install OS packages ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
-    sudo curl wget git unzip make build-essential cmake pkg-config \
-    software-properties-common tzdata \
-    python3 python3-venv python3-pip python3-dev \
+    software-properties-common curl wget sudo git unzip make build-essential cmake pkg-config \
+    ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
+    tzdata python3-pip python3-venv python3-dev \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev \
     libgmp-dev zlib1g-dev rsync zip \
     redis-server \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libpcap-dev \
     openvswitch-switch openvswitch-common \
-    ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
+    ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Add Deadsnakes PPA and install Python 3.10 ---
+RUN add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.10 python3.10-venv python3.10-dev python3.10-distutils \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Setup Python virtual environment ---
@@ -29,34 +37,12 @@ RUN python3 -m venv /opt/venv \
 # --- Install Bazelisk (Bazel launcher) ---
 RUN wget -O /usr/local/bin/bazelisk \
     https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
-    && chmod +x /usr/local/bin/bazelisk
+    && chmod +x /usr/local/bin/bazelisk \
+    && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
 
-# --- Create work directory ---
+# --- Create work directory and clone Magma ---
 WORKDIR $MAGMA_ROOT
-
-# --- Clone Magma repository ---
 RUN git clone https://github.com/magma/magma.git $MAGMA_ROOT
-
-# --- Install Bazelisk (Bazel launcher) ---
-RUN wget -O /usr/local/bin/bazelisk \
-    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
-    && chmod +x /usr/local/bin/bazelisk \
-    && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-venv python3-dev python3-pip \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3 1
-
-# --- Install Bazelisk (Bazel launcher) ---
-RUN wget -O /usr/local/bin/bazelisk \
-    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
-    && chmod +x /usr/local/bin/bazelisk \
-    && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
-
-# --- Tell Bazel to use Python 3.10 ---
-ENV USE_BAZEL_PYTHON=/usr/bin/python3.10
-
 
 # --- Bazel build for C components ---
 RUN bazel build --config=production \
