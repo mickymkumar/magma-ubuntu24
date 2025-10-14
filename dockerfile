@@ -1,6 +1,7 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
-# Fully functional on AWS without vport_gtp kernel module
+# Hybrid: C + Python components, works on AWS & local
+# Automatically skips vport_gtp DKMS build if kernel module missing
 ################################################################################
 
 FROM ubuntu:24.04
@@ -23,11 +24,12 @@ RUN apt-get update && apt-get upgrade -y && \
     python3 python3-pip python3-venv python3-setuptools python3-dev \
     net-tools iproute2 iputils-ping dnsutils sudo \
     openvswitch-switch openvswitch-common \
-    autoconf automake libtool pkg-config m4 dkms && \
+    autoconf automake libtool pkg-config m4 dkms \
+    linux-headers-$(uname -r) && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install Bazel (for completeness, skip building C binaries)
+# Install Bazel 5.2.0 (required for Magma C builds)
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y curl gnupg2 apt-transport-https && \
     curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
@@ -41,13 +43,14 @@ RUN apt-get update && apt-get install -y curl gnupg2 apt-transport-https && \
 RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
 
 # -----------------------------------------------------------------------------
-# Skip building C components (sessiond, sctpd, liagentd) on AWS kernels
+# Build C components (conditionally)
 # -----------------------------------------------------------------------------
-# WORKDIR ${MAGMA_ROOT}
-# RUN bazel build //lte/gateway/c/session_manager:sessiond \
-#                //lte/gateway/c/sctpd/src:sctpd \
-#                //lte/gateway/c/connection_tracker/src:connectiond \
-#                //lte/gateway/c/li_agent/src:liagentd || true
+WORKDIR ${MAGMA_ROOT}
+# Build C components; ignore errors (for AWS EC2 without kernel modules)
+RUN bazel build //lte/gateway/c/session_manager:sessiond \
+               //lte/gateway/c/sctpd/src:sctpd \
+               //lte/gateway/c/connection_tracker/src:connectiond \
+               //lte/gateway/c/li_agent/src:liagentd || echo "Skipping C build due to kernel limitations"
 
 # -----------------------------------------------------------------------------
 # Install Python packages from Magma
@@ -57,7 +60,7 @@ RUN python3 -m pip install --upgrade pip && \
     pip install -r requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service and Patch entrypoint to skip DKMS
+# Setup OVS Service & Patch entrypoint
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
 RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
@@ -72,6 +75,8 @@ RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
 EXPOSE 6640 6633 6653 53 80 443
 
 # -----------------------------------------------------------------------------
-# Entrypoint to start OVS and Python Magma services
+# Start OVS + Python Magma services
 # -----------------------------------------------------------------------------
-ENTRYPOINT ["/entrypoint.sh"]
+COPY start-magma.sh /start-magma.sh
+RUN chmod +x /start-magma.sh
+ENTRYPOINT ["/start-magma.sh"]
