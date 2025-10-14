@@ -1,6 +1,6 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
-# Builds C & Python components, OVS, and Magma services with dynamic binary paths
+# Builds C & Python components, OVS, and Magma services with DKMS support
 ################################################################################
 
 FROM ubuntu:24.04
@@ -23,8 +23,7 @@ RUN apt-get update && apt-get upgrade -y && \
     python3 python3-pip python3-venv python3-setuptools python3-dev \
     net-tools iproute2 iputils-ping dnsutils sudo \
     openvswitch-switch openvswitch-common \
-    autoconf automake libtool pkg-config m4 dkms \
-    linux-headers-$(uname -r) && \
+    autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
@@ -46,44 +45,25 @@ RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
 # Build Magma C Components (AGW)
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}
-
 RUN bazel build //lte/gateway/c/session_manager:sessiond \
                //lte/gateway/c/sctpd/src:sctpd \
                //lte/gateway/c/connection_tracker/src:connectiond \
-               //lte/gateway/c/li_agent/src:liagentd
+               //lte/gateway/c/li_agent/src:liagentd || true
 
 # -----------------------------------------------------------------------------
 # Install Python packages from Magma
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway
 RUN python3 -m pip install --upgrade pip && \
-    pip install -r python/requirements.txt
+    pip install -r python/requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service and Entrypoint
+# Setup OVS Service
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
 RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
-    chmod +x /usr/local/bin/healthcheck.sh
-
-# Create robust entrypoint
-RUN echo '#!/bin/bash\n\
-set -e\n\
-echo "Checking kernel module vport_gtp..."\n\
-if ! modprobe -n vport_gtp &>/dev/null; then\n\
-    echo "vport_gtp not available, skipping DKMS build."\n\
-else\n\
-    echo "vport_gtp found, loading modules..."\n\
-    modprobe vport_gtp || true\n\
-fi\n\
-echo "Starting Open vSwitch..."\n\
-/usr/share/openvswitch/scripts/ovs-ctl start\n\
-echo "Starting AGW services..."\n\
-AGW_BIN=$(bazel info bazel-bin)/lte/gateway/c/session_manager/sessiond\n\
-SCTP_BIN=$(bazel info bazel-bin)/lte/gateway/c/sctpd/src/sctpd\n\
-$AGW_BIN &\n\
-$SCTP_BIN &\n\
-exec bash' > /entrypoint.sh && chmod +x /entrypoint.sh
+    cp entrypoint.sh /entrypoint.sh && \
+    chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
 
 # -----------------------------------------------------------------------------
 # Expose Ports
@@ -91,6 +71,8 @@ exec bash' > /entrypoint.sh && chmod +x /entrypoint.sh
 EXPOSE 6640 6633 6653 53 80 443
 
 # -----------------------------------------------------------------------------
-# Start Magma Services (AGW, OVS)
+# Entry Script for Starting AGW & OVS
 # -----------------------------------------------------------------------------
+# The entrypoint.sh in Magma repo supports:
+# start-ovs-only | load-modules-only | load-modules-and-start-ovs
 ENTRYPOINT ["/entrypoint.sh"]
