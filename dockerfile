@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata python3-pip python3-venv python3-dev \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev \
     libgmp-dev zlib1g-dev rsync zip redis-server \
-    libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libpcap-dev \
+    libyaml-cpp-dev libsctp-dev libpcap-dev \
     openvswitch-switch openvswitch-common \
     ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools \
     && rm -rf /var/lib/apt/lists/*
@@ -40,12 +40,13 @@ RUN wget -O /usr/local/bin/bazelisk \
     && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
 
 # --- Install Magma build dependencies (fixes missing glog/systemd libs) ---
-RUN apt-get update && apt-get install -y \
-    libglog-dev \
-    libsystemd-dev \
-    libdouble-conversion-dev \
-    libunwind-dev \
-    libgflags-dev \
+RUN add-apt-repository universe \
+    && apt-get update && apt-get install -y \
+        libgoogle-glog-dev \
+        libsystemd-dev \
+        libdouble-conversion-dev \
+        libunwind-dev \
+        libgflags-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Create work directory and clone Magma ---
