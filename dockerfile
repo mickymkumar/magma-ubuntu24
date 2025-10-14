@@ -9,6 +9,7 @@ ENV MAGMA_ROOT=/magma
 ENV USE_BAZEL_PYTHON=/usr/bin/python3.10
 
 # --- Install OS packages ---
+# --- Install OS packages ---
 RUN apt-get update && apt-get install -y \
         software-properties-common \
         python3-apt \
@@ -17,6 +18,7 @@ RUN apt-get update && apt-get install -y \
         lsb-release \
         gnupg \
         ca-certificates \
+        git \
     && add-apt-repository universe \
     && apt-get update && apt-get install -y \
         libgoogle-glog-dev \
@@ -25,6 +27,7 @@ RUN apt-get update && apt-get install -y \
         libunwind-dev \
         libgflags-dev \
     && rm -rf /var/lib/apt/lists/*
+
 
 # --- Add Deadsnakes PPA and install Python 3.10 ---
 RUN add-apt-repository ppa:deadsnakes/ppa -y \
