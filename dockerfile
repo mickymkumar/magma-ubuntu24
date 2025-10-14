@@ -23,7 +23,7 @@ RUN apt-get update && apt-get upgrade -y && \
     python3 python3-pip python3-venv python3-setuptools python3-dev \
     net-tools iproute2 iputils-ping dnsutils sudo \
     openvswitch-switch openvswitch-common \
-    autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) && \
+    autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) bash && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
@@ -70,6 +70,15 @@ RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
 EXPOSE 6640 6633 6653 53 80 443
 
 # -----------------------------------------------------------------------------
+# Notes for OVS on EC2:
+# - Mount host /lib/modules and /usr/src for vport_gtp module
+#   docker run --privileged -v /lib/modules:/lib/modules:ro -v /usr/src:/usr/src:ro ...
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # Start Magma Services (AGW, OVS)
 # -----------------------------------------------------------------------------
 ENTRYPOINT ["/entrypoint.sh"]
+
+# Fallback to bash if entrypoint fails
+CMD ["bash"]
