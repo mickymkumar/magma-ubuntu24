@@ -7,7 +7,6 @@
 # 4. Bring Magma services up
 ################################################################################
 
-# Use Ubuntu 24.04 as base image
 FROM ubuntu:24.04
 
 # -----------------------------------------------------------------------------
@@ -30,37 +29,30 @@ RUN apt-get update && apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Clone Magma Source Code (host mounts magma folder before build)
+# Copy Magma Source Code (cloned on host)
 # -----------------------------------------------------------------------------
-# IMPORTANT: Clone the Magma repo on your EC2 host **before** running docker build
-# Example:
-#   git clone https://github.com/magma/magma.git
-#   docker build -t magma-core -f Dockerfile .
-# This Dockerfile expects the magma folder to be in the build context.
-
-COPY magma /magma
+# Make sure to clone the repo on host:
+# git clone https://github.com/magma/magma.git
+# Then run: docker build -t magma-core -f Dockerfile .
+COPY magma ${MAGMA_ROOT}
 
 # -----------------------------------------------------------------------------
-# Build and Install Magma Components
+# Install Python dependencies for Magma
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway
-
-# Install Python packages from Magma requirements
 RUN pip install --upgrade pip && \
     pip install -r python/requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service
+# Setup Open vSwitch Scripts
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
-
-COPY ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch/healthcheck.sh /usr/local/bin/healthcheck.sh
-COPY ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch/entrypoint.sh /entrypoint.sh
+COPY magma/lte/gateway/docker/services/openvswitch/healthcheck.sh /usr/local/bin/healthcheck.sh
+COPY magma/lte/gateway/docker/services/openvswitch/entrypoint.sh /entrypoint.sh
 RUN chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
 
 # -----------------------------------------------------------------------------
-# Expose Ports & Entry
+# Expose Ports & Entrypoint
 # -----------------------------------------------------------------------------
 EXPOSE 6640 6633 6653 53 80 443
-
 ENTRYPOINT ["/entrypoint.sh"]
