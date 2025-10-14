@@ -14,8 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
     tzdata python3-pip python3-venv python3-dev \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev \
-    libgmp-dev zlib1g-dev rsync zip \
-    redis-server \
+    libgmp-dev zlib1g-dev rsync zip redis-server \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libpcap-dev \
     openvswitch-switch openvswitch-common \
     ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools \
@@ -40,6 +39,15 @@ RUN wget -O /usr/local/bin/bazelisk \
     && chmod +x /usr/local/bin/bazelisk \
     && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
 
+# --- Install Magma build dependencies (fixes missing glog/systemd libs) ---
+RUN apt-get update && apt-get install -y \
+    libglog-dev \
+    libsystemd-dev \
+    libdouble-conversion-dev \
+    libunwind-dev \
+    libgflags-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # --- Create work directory and clone Magma ---
 WORKDIR $MAGMA_ROOT
 RUN git clone https://github.com/magma/magma.git $MAGMA_ROOT
@@ -49,7 +57,6 @@ RUN bazel build --config=production \
     //lte/gateway/c/sctpd/src:sctpd \
     //lte/gateway/c/connection_tracker/src:connectiond \
     //lte/gateway/c/session_manager:sessiond
-
 
 # --- Bazel build for Python components ---
 RUN bazel build //lte/gateway/release:python_executables_tar \
