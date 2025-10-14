@@ -43,6 +43,7 @@ WORKDIR /magma
 RUN git clone https://github.com/magma/magma.git /magma
 
 # --- Fix Library Paths for Bazel ---
+# Bazel's glob needs exact filenames
 RUN ln -sf /usr/lib/x86_64-linux-gnu/libglog.so /usr/lib/x86_64-linux-gnu/libglog.so.0 \
     && ln -sf /usr/lib/x86_64-linux-gnu/libsystemd.so /usr/lib/x86_64-linux-gnu/libsystemd.so.0
 
