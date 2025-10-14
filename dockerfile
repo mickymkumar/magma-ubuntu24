@@ -28,12 +28,13 @@ RUN apt-get update && apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install Bazel (required for C builds)
+# Install Bazel 5.2.0 (required by Magma)
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y curl gnupg && \
     curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
-    apt-get update && apt-get install -y bazel && \
+    apt-get update && \
+    apt-get install -y bazel-5.2.0 && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
