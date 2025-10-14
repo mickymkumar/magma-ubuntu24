@@ -10,8 +10,13 @@ ENV USE_BAZEL_PYTHON=/usr/bin/python3.10
 
 # --- Install OS packages ---
 RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    python3-apt \
+        software-properties-common \
+        python3-apt \
+        wget \
+        curl \
+        lsb-release \
+        gnupg \
+        ca-certificates \
     && add-apt-repository universe \
     && apt-get update && apt-get install -y \
         libgoogle-glog-dev \
@@ -20,7 +25,6 @@ RUN apt-get update && apt-get install -y \
         libunwind-dev \
         libgflags-dev \
     && rm -rf /var/lib/apt/lists/*
-
 
 # --- Add Deadsnakes PPA and install Python 3.10 ---
 RUN add-apt-repository ppa:deadsnakes/ppa -y \
@@ -37,19 +41,9 @@ RUN python3 -m venv /opt/venv \
 
 # --- Install Bazelisk (Bazel launcher) ---
 RUN wget -O /usr/local/bin/bazelisk \
-    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
+        https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazelisk \
     && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
-
-# --- Install Magma build dependencies (fixes missing glog/systemd libs) ---
-RUN add-apt-repository universe \
-    && apt-get update && apt-get install -y \
-        libgoogle-glog-dev \
-        libsystemd-dev \
-        libdouble-conversion-dev \
-        libunwind-dev \
-        libgflags-dev \
-    && rm -rf /var/lib/apt/lists/*
 
 # --- Create work directory and clone Magma ---
 WORKDIR $MAGMA_ROOT
