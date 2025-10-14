@@ -1,5 +1,10 @@
+################################################################################
+# Magma Gateway Dockerfile (Ubuntu 24.04 / 22.04 compatible)
+# Includes: OVS, Python, C deps, and Magma v1.9 source
+################################################################################
+
 # -----------------------------------------------------------------------------
-# Base image and args
+# Build Arguments
 # -----------------------------------------------------------------------------
 ARG CPU_ARCH=x86_64
 ARG DEB_PORT=amd64
@@ -7,122 +12,87 @@ ARG OS_DIST=ubuntu
 ARG OS_RELEASE=focal
 ARG EXTRA_REPO=https://linuxfoundation.jfrog.io/artifactory/magma-packages-test
 
-FROM $OS_DIST:$OS_RELEASE AS gateway_ovs
-ARG CPU_ARCH
-ARG OS_DIST
-ARG OS_RELEASE
+FROM ${OS_DIST}:${OS_RELEASE} AS magma_gateway
 
-ENV MAGMA_ROOT=/magma
+# -----------------------------------------------------------------------------
+# Environment
+# -----------------------------------------------------------------------------
 ENV TZ=America/Toronto
+ENV MAGMA_ROOT=/opt/magma
+ENV DEBIAN_FRONTEND=noninteractive
 
 # -----------------------------------------------------------------------------
 # Set timezone
 # -----------------------------------------------------------------------------
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime && echo ${TZ} > /etc/timezone
 
 # -----------------------------------------------------------------------------
-# Upgrade & install common packages
+# Update packages and install base tools
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-    apt-utils \
-    ca-certificates \
-    apt-transport-https \
-    curl \
-    gnupg \
-    wget \
-    software-properties-common \
-    sudo \
-    build-essential \
-    cmake \
-    git \
-    python3 \
-    python3-pip \
-    autoconf \
-    libtool \
-    pkg-config \
-    vim \
-    net-tools \
-    iproute2 \
-    iptables \
-    tzdata \
-    unzip \
-    uuid-dev \
-    bridge-utils \
-    iputils-ping \
-    && rm -rf /var/lib/apt/lists/*
+    git curl wget sudo vim tzdata build-essential cmake python3 python3-pip \
+    iproute2 iptables net-tools bridge-utils iputils-ping iputils-tracepath \
+    libssl-dev libffi-dev pkg-config software-properties-common \
+    ca-certificates gnupg lsb-release supervisor && \
+    rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
 # Clone Magma v1.9
 # -----------------------------------------------------------------------------
 WORKDIR /opt
-RUN git clone --branch v1.9 https://github.com/magma/magma.git $MAGMA_ROOT
+RUN git clone --branch v1.9 https://github.com/magma/magma.git
 
 # -----------------------------------------------------------------------------
 # Install Open vSwitch
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libopenvswitch \
-    openvswitch-common \
-    openvswitch-switch \
-    openvswitch-datapath-dkms \
-    linux-headers-$(uname -r) \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy OVS scripts from cloned repo
-COPY $MAGMA_ROOT/lte/gateway/docker/services/openvswitch/healthcheck.sh /usr/local/bin/healthcheck.sh
-COPY $MAGMA_ROOT/lte/gateway/docker/services/openvswitch/entrypoint.sh /entrypoint.sh
-RUN chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
+    openvswitch-switch openvswitch-common libopenvswitch && \
+    rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install C dependencies for Magma build
+# Copy OVS scripts from cloned repo
+# -----------------------------------------------------------------------------
+RUN cp /opt/magma/lte/gateway/docker/services/openvswitch/healthcheck.sh /usr/local/bin/healthcheck.sh && \
+    cp /opt/magma/lte/gateway/docker/services/openvswitch/entrypoint.sh /entrypoint.sh && \
+    chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
+
+# -----------------------------------------------------------------------------
+# Install Magma C and Python dependencies
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ccache \
-    check \
-    libboost-chrono-dev \
-    libboost-context-dev \
-    libboost-program-options-dev \
-    libboost-filesystem-dev \
-    libboost-regex-dev \
-    libc++-dev \
-    libconfig-dev \
-    libcurl4-openssl-dev \
-    libczmq-dev \
-    libdouble-conversion-dev \
-    libgflags-dev \
-    libgmp3-dev \
-    libgoogle-glog-dev \
-    libmnl-dev \
-    libpcap-dev \
-    libprotoc-dev \
-    libsctp-dev \
-    libsqlite3-dev \
-    libssl-dev \
-    libtspi-dev \
-    libxml2-dev \
-    libxslt-dev \
-    libyaml-cpp-dev \
-    ninja-build \
-    nlohmann-json3-dev \
-    protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
+    libboost-all-dev libconfig-dev libcurl4-openssl-dev \
+    libgflags-dev libgoogle-glog-dev libprotobuf-dev protobuf-compiler \
+    ninja-build ccache check libtspi-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Python requirements for Magma LTE gateway
+RUN pip3 install --no-cache-dir -r /opt/magma/lte/gateway/python/requirements.txt
 
 # -----------------------------------------------------------------------------
-# Install Python dependencies
+# Supervisor config for OVS + Magma services
 # -----------------------------------------------------------------------------
-RUN pip3 install --no-cache-dir -r $MAGMA_ROOT/lte/gateway/python/requirements.txt
+RUN mkdir -p /etc/supervisor/conf.d
+RUN echo "[supervisord]" > /etc/supervisor/supervisord.conf && \
+    echo "nodaemon=true" >> /etc/supervisor/supervisord.conf && \
+    echo "" >> /etc/supervisor/supervisord.conf && \
+    echo "[program:openvswitch]" >> /etc/supervisor/supervisord.conf && \
+    echo "command=/usr/share/openvswitch/scripts/ovs-ctl start --system-id=random" >> /etc/supervisor/supervisord.conf && \
+    echo "autostart=true" >> /etc/supervisor/supervisord.conf && \
+    echo "autorestart=true" >> /etc/supervisor/supervisord.conf && \
+    echo "" >> /etc/supervisor/supervisord.conf && \
+    echo "[program:healthcheck]" >> /etc/supervisor/supervisord.conf && \
+    echo "command=/usr/local/bin/healthcheck.sh" >> /etc/supervisor/supervisord.conf && \
+    echo "autostart=true" >> /etc/supervisor/supervisord.conf && \
+    echo "autorestart=true" >> /etc/supervisor/supervisord.conf
 
 # -----------------------------------------------------------------------------
-# Optional: Build C binaries (sessiond, sctpd, connectiond, liagentd)
+# Expose ports (OVS, Magma)
 # -----------------------------------------------------------------------------
-# WORKDIR $MAGMA_ROOT
-# RUN bazel build //lte/gateway/c/session_manager:sessiond \
-#                //lte/gateway/c/sctpd/src:sctpd \
-#                //lte/gateway/c/connection_tracker/src:connectiond \
-#                //lte/gateway/c/li_agent/src:liagentd
+EXPOSE 6653 6640 9090 8080
 
 # -----------------------------------------------------------------------------
-# Set entrypoint
+# Entrypoint
 # -----------------------------------------------------------------------------
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
