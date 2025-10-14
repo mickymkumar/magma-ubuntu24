@@ -8,30 +8,32 @@ ARG OS_DIST=ubuntu
 ARG OS_RELEASE=noble
 
 # -----------------------------------------------------------------------------
-# Stage 1: Base builder (system + python)
+# Stage 1: Base builder (system + Python 3.11)
 # -----------------------------------------------------------------------------
 FROM ${OS_DIST}:${OS_RELEASE} AS base
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install basic tools and Python
+# Install system packages + Python 3.11 from deadsnakes
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common wget sudo curl git lsb-release \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 python3.11-venv python3.11-dev python3-pip \
     sudo net-tools iproute2 bridge-utils iputils-ping tcpdump iptables \
-    python3 python3-venv python3-dev python3-pip \
-    curl wget git unzip make build-essential cmake pkg-config software-properties-common \
-    libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libgmp-dev zlib1g-dev rsync zip \
-    ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
-    tzdata && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    curl wget git unzip make build-essential cmake pkg-config \
+    libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev \
+    libgmp-dev zlib1g-dev rsync zip ifupdown lsb-release gnupg \
+    supervisor autoconf automake libtool lksctp-tools libsctp-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Create magma user
 RUN useradd -ms /bin/bash magma && echo "magma ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 WORKDIR /home/magma
 VOLUME /home/magma
 
-# Python venv
-RUN python3 -m venv /opt/venv && \
-    /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
+# Python virtual environment
+RUN python3.11 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
 
 # -----------------------------------------------------------------------------
 # Stage 2: Magma source setup
@@ -48,20 +50,23 @@ ENV MAGMA_DEV_MODE=0
 ENV TZ=Etc/UTC
 ENV PIP_CACHE_HOME="/root/.pipcache"
 
+# Install dependencies for Bazel
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io git lsb-release libsystemd-dev pkg-config python3-dev python3-pip sudo wget \
+    docker.io libsystemd-dev pkg-config python3.11-dev python3-pip sudo wget git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bazelisk
 ARG DEB_PORT=amd64
 RUN wget -O /usr/local/bin/bazelisk \
-    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-${DEB_PORT} && \
-    chmod +x /usr/local/bin/bazelisk && \
-    ln -s /usr/local/bin/bazelisk /usr/sbin/bazel || true
+    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-${DEB_PORT} \
+    && chmod +x /usr/local/bin/bazelisk \
+    && ln -s /usr/local/bin/bazelisk /usr/sbin/bazel
 
 WORKDIR /magma
-RUN bazel build //lte/gateway/release:python_executables_tar \
-               //lte/gateway/release:dhcp_helper_cli_tar
+# Build Python executables with Python 3.11
+RUN bazel build --python_path=/usr/bin/python3.11 \
+    //lte/gateway/release:python_executables_tar \
+    //lte/gateway/release:dhcp_helper_cli_tar
 
 # -----------------------------------------------------------------------------
 # Stage 4: C build (sessiond, sctpd, etc.)
@@ -76,15 +81,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libboost-regex-dev libc++-dev libconfig-dev libcurl4-openssl-dev libczmq-dev \
     libdouble-conversion-dev libgflags-dev libgmp3-dev libgoogle-glog-dev libmnl-dev libpcap-dev \
     libprotoc-dev libsctp-dev libsqlite3-dev libssl-dev libtspi-dev libtool libxml2-dev libxslt-dev \
-    libyaml-cpp-dev protobuf-compiler unzip uuid-dev sudo && \
-    rm -rf /var/lib/apt/lists/*
+    libyaml-cpp-dev protobuf-compiler unzip uuid-dev sudo && rm -rf /var/lib/apt/lists/*
 
-# Install Bazelisk
-ARG DEB_PORT=amd64
+# Bazelisk install
 RUN wget -O /usr/local/bin/bazelisk \
-    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-${DEB_PORT} && \
-    chmod +x /usr/local/bin/bazelisk && \
-    ln -s /usr/local/bin/bazelisk /usr/sbin/bazel || true
+    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-${DEB_PORT} \
+    && chmod +x /usr/local/bin/bazelisk \
+    && ln -s /usr/local/bin/bazelisk /usr/sbin/bazel
 
 WORKDIR /magma
 RUN bazel build --config=production \
@@ -104,10 +107,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
-    python3 python3-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
+    python3.11 python3.11-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libssl-dev libpcap-dev \
-    openvswitch-switch openvswitch-common && \
-    rm -rf /var/lib/apt/lists/*
+    openvswitch-switch openvswitch-common \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
