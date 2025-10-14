@@ -1,6 +1,7 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
-# Fully self-contained: builds Python + C components, sets up OVS, skips vport_gtp DKMS
+# Builds C & Python components, OVS, and Magma services with DKMS support
+# Automatically skips vport_gtp DKMS build if kernel module is missing
 ################################################################################
 
 FROM ubuntu:24.04
@@ -23,86 +24,69 @@ RUN apt-get update && apt-get upgrade -y && \
     python3 python3-pip python3-venv python3-setuptools python3-dev \
     net-tools iproute2 iputils-ping dnsutils sudo \
     openvswitch-switch openvswitch-common \
-    autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) && \
+    autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) \
+    apt-transport-https && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install Bazel 5.2.0
+# Install Bazel 5.2.0 (required by Magma)
 # -----------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y apt-transport-https curl gnupg2 && \
-    curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
+RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
     apt-get update && \
     apt-get install -y bazel-5.2.0 && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Clone Magma Source
+# Clone Magma Source Code
 # -----------------------------------------------------------------------------
 RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
 
 # -----------------------------------------------------------------------------
-# Build C binaries if Bazel works
+# Build Magma C Components (AGW)
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}
-RUN if command -v bazel > /dev/null; then \
-      bazel build //lte/gateway/c/session_manager:sessiond \
-                  //lte/gateway/c/sctpd/src:sctpd \
-                  //lte/gateway/c/connection_tracker/src:connectiond \
-                  //lte/gateway/c/li_agent/src:liagentd || true; \
-    fi
+RUN bazel build //lte/gateway/c/session_manager:sessiond \
+               //lte/gateway/c/sctpd/src:sctpd \
+               //lte/gateway/c/connection_tracker/src:connectiond \
+               //lte/gateway/c/li_agent/src:liagentd || true
 
 # -----------------------------------------------------------------------------
-# Install Python packages
+# Install Python packages from Magma
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway
 RUN python3 -m pip install --upgrade pip && \
     pip install -r python/requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service
+# Setup OVS Service and Magma Startup Script
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
-RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
-    cp entrypoint.sh /entrypoint.sh && \
-    chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh && \
-    # Patch entrypoint.sh to skip vport_gtp DKMS build
-    sed -i '/Checking kernel module "vport_gtp"/,/Error! Arguments <module>/c\echo "vport_gtp not available, skipping DKMS build."' /entrypoint.sh
+COPY healthcheck.sh /usr/local/bin/healthcheck.sh
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
 
-# -----------------------------------------------------------------------------
-# Create OVS runtime directories and wrapper script
-# -----------------------------------------------------------------------------
-RUN mkdir -p /var/run/openvswitch /etc/openvswitch
-
-COPY <<EOF /usr/local/bin/start_magma.sh
-#!/bin/bash
-set -e
-
-# Ensure OVS directories exist
-mkdir -p /var/run/openvswitch /etc/openvswitch
-
-echo "Starting Open vSwitch..."
-ovsdb-server --remote=punix:/var/run/openvswitch/db.sock \
-             --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
-             --pidfile --detach
-ovs-vsctl --no-wait init
-ovs-vswitchd --pidfile --detach
-
-echo "Starting Magma services..."
-# Run C binaries if they exist, otherwise skip
-for bin in sessiond sctpd connectiond liagentd; do
-    if [ -x /magma/bazel-bin/lte/gateway/c/\$bin ]; then
-        /magma/bazel-bin/lte/gateway/c/\$bin &
-    else
-        echo "\$bin not found, skipping"
-    fi
-done
-
-# Keep container alive
-tail -f /dev/null
-EOF
-
-RUN chmod +x /usr/local/bin/start_magma.sh
+# Create wrapper script to start OVS + Magma C binaries
+RUN echo '#!/bin/bash\n\
+set -e\n\
+mkdir -p /var/run/openvswitch /etc/openvswitch\n\
+chmod 777 /var/run/openvswitch /etc/openvswitch\n\
+echo "vport_gtp not available, skipping DKMS build"\n\
+ovsdb-tool create /etc/openvswitch/conf.db vswitch.ovsschema || true\n\
+ovsdb-server /etc/openvswitch/conf.db --remote=punix:/var/run/openvswitch/db.sock --remote=db:Open_vSwitch,Open_vSwitch,manager_options --pidfile --detach || true\n\
+while [ ! -S /var/run/openvswitch/db.sock ]; do sleep 0.5; done\n\
+ovs-vsctl --no-wait init || true\n\
+ovs-vswitchd --pidfile --detach || true\n\
+echo "Open vSwitch started successfully"\n\
+for bin in session_manager/sctpd connection_tracker/connectiond li_agent/liagentd; do\n\
+    if [ -x /magma/bazel-bin/lte/gateway/c/$bin ]; then\n\
+        echo "Starting $bin"\n\
+        /magma/bazel-bin/lte/gateway/c/$bin &\n\
+    else\n\
+        echo "$bin not found, skipping"\n\
+    fi\n\
+done\n\
+tail -f /dev/null' > /start_magma.sh && chmod +x /start_magma.sh
 
 # -----------------------------------------------------------------------------
 # Expose Ports
@@ -110,6 +94,6 @@ RUN chmod +x /usr/local/bin/start_magma.sh
 EXPOSE 6640 6633 6653 53 80 443
 
 # -----------------------------------------------------------------------------
-# Start everything via wrapper
+# Entry Script for Starting AGW & OVS
 # -----------------------------------------------------------------------------
-ENTRYPOINT ["/usr/local/bin/start_magma.sh"]
+ENTRYPOINT ["/start_magma.sh"]
