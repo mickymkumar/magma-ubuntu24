@@ -1,6 +1,6 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
-# Builds C & Python components, OVS, and Magma services with DKMS support
+# AWS-compatible: uses host OVS kernel modules to avoid vport_gtp issues
 ################################################################################
 
 FROM ubuntu:24.04
@@ -18,12 +18,12 @@ ENV PATH=$PATH:/usr/local/bin:/usr/local/sbin
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-    git curl wget ca-certificates gnupg2 lsb-release tzdata \
-    build-essential cmake pkg-config \
-    python3 python3-pip python3-venv python3-setuptools python3-dev \
-    net-tools iproute2 iputils-ping dnsutils sudo \
-    openvswitch-switch openvswitch-common \
-    autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) bash && \
+        git curl wget ca-certificates gnupg2 lsb-release tzdata \
+        build-essential cmake pkg-config \
+        python3 python3-pip python3-venv python3-setuptools python3-dev \
+        net-tools iproute2 iputils-ping dnsutils sudo \
+        openvswitch-switch openvswitch-common \
+        autoconf automake libtool m4 && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
@@ -70,15 +70,6 @@ RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
 EXPOSE 6640 6633 6653 53 80 443
 
 # -----------------------------------------------------------------------------
-# Notes for OVS on EC2:
-# - Mount host /lib/modules and /usr/src for vport_gtp module
-#   docker run --privileged -v /lib/modules:/lib/modules:ro -v /usr/src:/usr/src:ro ...
-# -----------------------------------------------------------------------------
-
-# -----------------------------------------------------------------------------
-# Start Magma Services (AGW, OVS)
+# Use modified entrypoint to skip vport_gtp build on AWS kernels
 # -----------------------------------------------------------------------------
 ENTRYPOINT ["/entrypoint.sh"]
-
-# Fallback to bash if entrypoint fails
-CMD ["bash"]
