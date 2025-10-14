@@ -42,11 +42,11 @@ RUN wget -O /usr/local/bin/bazelisk \
     https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
     && chmod +x /usr/local/bin/bazelisk \
     && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
-# --- Install Python 3.10 ---
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.10 python3.10-venv python3.10-dev python3-pip \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
-    && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+    python3 python3-venv python3-dev python3-pip \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 
 # --- Install Bazelisk (Bazel launcher) ---
 RUN wget -O /usr/local/bin/bazelisk \
