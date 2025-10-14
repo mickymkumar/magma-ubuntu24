@@ -37,6 +37,13 @@ WORKDIR $MAGMA_ROOT
 # --- Clone Magma repository ---
 RUN git clone https://github.com/magma/magma.git $MAGMA_ROOT
 
+# --- Install Bazelisk (Bazel launcher) ---
+RUN wget -O /usr/local/bin/bazelisk \
+    https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
+    && chmod +x /usr/local/bin/bazelisk \
+    && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
+
+
 # --- Bazel build for C components ---
 RUN bazel build --config=production \
     //lte/gateway/c/sctpd/src:sctpd \
