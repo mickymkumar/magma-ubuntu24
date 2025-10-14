@@ -1,38 +1,38 @@
 ################################################################################
-# Magma Gateway Dockerfile (Ubuntu 24.04, Python 3.10, EC2 Ready)
+# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready, Python 3.10)
 ################################################################################
 
 ARG CPU_ARCH=x86_64
 ARG DEB_PORT=amd64
 ARG OS_DIST=ubuntu
-ARG OS_RELEASE=24.04
+ARG OS_RELEASE=noble
 
 # -----------------------------------------------------------------------------
-# Stage 1: Base builder (system + python 3.10)
+# Stage 1: Base builder (system + python)
 # -----------------------------------------------------------------------------
 FROM ${OS_DIST}:${OS_RELEASE} AS base
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install system dependencies and Python 3.10
+# Add deadsnakes PPA for Python 3.10
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common curl wget git unzip make build-essential cmake pkg-config \
+    software-properties-common wget curl \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update
+
+RUN apt-get install -y --no-install-recommends \
     sudo net-tools iproute2 bridge-utils iputils-ping tcpdump iptables \
-    python3.10 python3.10-venv python3.10-dev python3-pip \
+    python3.10 python3.10-venv python3.10-dev python3-pip python3.10-distutils \
+    curl wget git unzip make build-essential cmake pkg-config \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libgmp-dev zlib1g-dev rsync zip \
     ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Set Python 3.10 as default python3
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
-
-# Create magma user
 RUN useradd -ms /bin/bash magma && echo "magma ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 WORKDIR /home/magma
 VOLUME /home/magma
 
-# Setup Python venv
-RUN python3 -m venv /opt/venv \
+RUN python3.10 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
 
 # -----------------------------------------------------------------------------
@@ -49,11 +49,9 @@ FROM magma-src AS magma-python
 ENV MAGMA_DEV_MODE=0
 ENV TZ=Etc/UTC
 ENV PIP_CACHE_HOME="~/.pipcache"
-ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHON_BIN_PATH=/usr/bin/python3.10
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io git lsb-release libsystemd-dev pkg-config sudo wget \
+    docker.io git lsb-release libsystemd-dev pkg-config python3.10-dev python3-pip sudo wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bazelisk
@@ -62,9 +60,8 @@ RUN wget -O /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/relea
     && ln -s /usr/local/bin/bazelisk /usr/bin/bazel
 
 WORKDIR /magma
-# Build Python executables with Bazel using Python 3.10
-RUN /opt/venv/bin/bazel build //lte/gateway/release:python_executables_tar \
-                            //lte/gateway/release:dhcp_helper_cli_tar
+RUN bazel build //lte/gateway/release:python_executables_tar \
+               //lte/gateway/release:dhcp_helper_cli_tar
 
 # -----------------------------------------------------------------------------
 # Stage 4: C build (sessiond, sctpd, etc.)
@@ -102,7 +99,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Add deadsnakes PPA for Python 3.10
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common wget curl \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update
+
+RUN apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
     python3.10 python3.10-venv python3.10-distutils python3-pip redis-server ethtool sudo curl wget vim tzdata \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libssl-dev libpcap-dev \
@@ -112,7 +115,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN python3.10 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel
 
-# Copy Python environment and Magma source
+# Copy Python env and Magma source
 COPY --from=magma-python /magma /magma
 COPY --from=base /opt/venv /opt/venv
 
