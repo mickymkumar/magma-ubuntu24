@@ -1,5 +1,5 @@
 ################################################################################
-# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready, Python 3.10)
+# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready, Python 3.12)
 ################################################################################
 
 ARG CPU_ARCH=x86_64
@@ -16,7 +16,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo net-tools iproute2 bridge-utils iputils-ping tcpdump iptables \
-    python3.10 python3.10-venv python3.10-dev python3-pip python3.10-distutils \
+    python3 python3-venv python3-dev python3-pip python3-distutils \
     curl wget git unzip make build-essential cmake pkg-config software-properties-common \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libgmp-dev zlib1g-dev rsync zip \
     ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
@@ -26,7 +26,7 @@ RUN useradd -ms /bin/bash magma && echo "magma ALL=(ALL) NOPASSWD:ALL" >> /etc/s
 WORKDIR /home/magma
 VOLUME /home/magma
 
-RUN python3.10 -m venv /opt/venv \
+RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
 
 # -----------------------------------------------------------------------------
@@ -45,7 +45,7 @@ ENV TZ=Etc/UTC
 ENV PIP_CACHE_HOME="~/.pipcache"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io git lsb-release libsystemd-dev pkg-config python3.10-dev python3-pip sudo wget \
+    docker.io git lsb-release libsystemd-dev pkg-config python3-dev python3-pip sudo wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bazelisk
@@ -94,13 +94,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
-    python3.10 python3.10-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
+    python3 python3-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libssl-dev libpcap-dev \
     openvswitch-switch openvswitch-common \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-RUN python3.10 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel
+RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel
 
 # Copy Python env and Magma source
 COPY --from=magma-python /magma /magma
