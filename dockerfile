@@ -30,12 +30,12 @@ RUN apt-get update && apt-get upgrade -y && \
 # -----------------------------------------------------------------------------
 # Install Bazel 5.2.0 (required by Magma)
 # -----------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y curl gnupg && \
+RUN apt-get update && apt-get install -y apt-transport-https curl gnupg2 && \
     curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
     apt-get update && \
-    apt-get install -y bazel-5.2.0 && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y bazel-5.2.0
+
 
 # -----------------------------------------------------------------------------
 # Clone Magma Source Code
