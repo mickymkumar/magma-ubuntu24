@@ -1,6 +1,7 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
-# AWS-compatible: uses host OVS kernel modules to avoid vport_gtp issues
+# Fully self-contained: builds C & Python components, OVS, and Magma services
+# Automatically handles missing vport_gtp module (AWS kernel friendly)
 ################################################################################
 
 FROM ubuntu:24.04
@@ -19,11 +20,11 @@ ENV PATH=$PATH:/usr/local/bin:/usr/local/sbin
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         git curl wget ca-certificates gnupg2 lsb-release tzdata \
-        build-essential cmake pkg-config \
+        build-essential cmake pkg-config autoconf automake libtool m4 dkms \
         python3 python3-pip python3-venv python3-setuptools python3-dev \
         net-tools iproute2 iputils-ping dnsutils sudo \
         openvswitch-switch openvswitch-common \
-        autoconf automake libtool m4 && \
+        linux-headers-$(uname -r) && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
@@ -40,9 +41,10 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/
 RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
 
 # -----------------------------------------------------------------------------
-# Build Magma C Components (AGW, Orc8r, FeG)
+# Build Magma C Components (AGW)
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}
+
 RUN bazel build //lte/gateway/c/session_manager:sessiond \
                //lte/gateway/c/sctpd/src:sctpd \
                //lte/gateway/c/connection_tracker/src:connectiond \
@@ -57,12 +59,30 @@ RUN python3 -m pip install --upgrade pip && \
     pip install -r python/requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service
+# Setup OVS Service & Entry Script
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
+
 RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
     cp entrypoint.sh /entrypoint.sh && \
     chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
+
+# Override entrypoint with a robust script that handles missing vport_gtp
+RUN echo '#!/bin/bash\n\
+set -e\n\
+echo "Checking kernel module vport_gtp..."\n\
+if ! modprobe -n vport_gtp &>/dev/null; then\n\
+    echo "vport_gtp not available, skipping DKMS build."\n\
+else\n\
+    echo "vport_gtp found, loading modules..."\n\
+    modprobe vport_gtp || true\n\
+fi\n\
+echo "Starting Open vSwitch..."\n\
+/usr/share/openvswitch/scripts/ovs-ctl start\n\
+echo "Starting AGW services..."\n\
+${MAGMA_ROOT}/bazel-bin/lte/gateway/c/session_manager/sessiond &\n\
+${MAGMA_ROOT}/bazel-bin/lte/gateway/c/sctpd/src/sctpd &\n\
+exec bash' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # -----------------------------------------------------------------------------
 # Expose Ports
@@ -70,6 +90,6 @@ RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
 EXPOSE 6640 6633 6653 53 80 443
 
 # -----------------------------------------------------------------------------
-# Use modified entrypoint to skip vport_gtp build on AWS kernels
+# Start Magma Services (AGW, OVS)
 # -----------------------------------------------------------------------------
 ENTRYPOINT ["/entrypoint.sh"]
