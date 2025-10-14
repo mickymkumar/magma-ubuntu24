@@ -6,9 +6,6 @@
 
 FROM ubuntu:24.04
 
-# -----------------------------------------------------------------------------
-# Environment Variables
-# -----------------------------------------------------------------------------
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/Toronto
 ENV MAGMA_ROOT=/magma
@@ -29,7 +26,7 @@ RUN apt-get update && apt-get upgrade -y && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install Bazel 5.2.0 (required by Magma)
+# Install Bazel 5.2.0
 # -----------------------------------------------------------------------------
 RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
     echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
@@ -43,7 +40,7 @@ RUN curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/
 RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
 
 # -----------------------------------------------------------------------------
-# Build Magma C Components (AGW)
+# Build Magma C Components
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}
 RUN bazel build //lte/gateway/c/session_manager:sessiond \
@@ -52,26 +49,27 @@ RUN bazel build //lte/gateway/c/session_manager:sessiond \
                //lte/gateway/c/li_agent/src:liagentd || true
 
 # -----------------------------------------------------------------------------
-# Install Python packages from Magma
+# Install Python packages
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway
 RUN python3 -m pip install --upgrade pip && \
     pip install -r python/requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service and Magma Startup Script
+# Patch entrypoint.sh to skip DKMS build
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
-COPY healthcheck.sh /usr/local/bin/healthcheck.sh
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
+RUN sed -i '/Checking kernel module "vport_gtp"/,/Error! Arguments <module>/c\echo "vport_gtp not available, skipping DKMS build."' entrypoint.sh && \
+    chmod +x entrypoint.sh healthcheck.sh
 
-# Create wrapper script to start OVS + Magma C binaries
+# -----------------------------------------------------------------------------
+# Wrapper Script to Start OVS and Magma
+# -----------------------------------------------------------------------------
 RUN echo '#!/bin/bash\n\
 set -e\n\
 mkdir -p /var/run/openvswitch /etc/openvswitch\n\
 chmod 777 /var/run/openvswitch /etc/openvswitch\n\
-echo "vport_gtp not available, skipping DKMS build"\n\
+echo "Starting Open vSwitch..."\n\
 ovsdb-tool create /etc/openvswitch/conf.db vswitch.ovsschema || true\n\
 ovsdb-server /etc/openvswitch/conf.db --remote=punix:/var/run/openvswitch/db.sock --remote=db:Open_vSwitch,Open_vSwitch,manager_options --pidfile --detach || true\n\
 while [ ! -S /var/run/openvswitch/db.sock ]; do sleep 0.5; done\n\
@@ -88,12 +86,6 @@ for bin in session_manager/sctpd connection_tracker/connectiond li_agent/liagent
 done\n\
 tail -f /dev/null' > /start_magma.sh && chmod +x /start_magma.sh
 
-# -----------------------------------------------------------------------------
-# Expose Ports
-# -----------------------------------------------------------------------------
 EXPOSE 6640 6633 6653 53 80 443
 
-# -----------------------------------------------------------------------------
-# Entry Script for Starting AGW & OVS
-# -----------------------------------------------------------------------------
 ENTRYPOINT ["/start_magma.sh"]
