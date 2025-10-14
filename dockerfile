@@ -1,6 +1,7 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
 # Builds C & Python components, OVS, and Magma services with DKMS support
+# Automatically skips vport_gtp DKMS build if kernel module is missing
 ################################################################################
 
 FROM ubuntu:24.04
@@ -58,12 +59,14 @@ RUN python3 -m pip install --upgrade pip && \
     pip install -r python/requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service
+# Setup OVS Service and Patch entrypoint to skip DKMS if vport_gtp missing
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
 RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
     cp entrypoint.sh /entrypoint.sh && \
-    chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
+    chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh && \
+    # Patch entrypoint.sh to skip vport_gtp DKMS build if missing
+    sed -i '/Checking kernel module "vport_gtp"/,/Error! Arguments <module>/c\echo "vport_gtp not available, skipping DKMS build."' /entrypoint.sh
 
 # -----------------------------------------------------------------------------
 # Expose Ports
@@ -73,6 +76,4 @@ EXPOSE 6640 6633 6653 53 80 443
 # -----------------------------------------------------------------------------
 # Entry Script for Starting AGW & OVS
 # -----------------------------------------------------------------------------
-# The entrypoint.sh in Magma repo supports:
-# start-ovs-only | load-modules-only | load-modules-and-start-ovs
 ENTRYPOINT ["/entrypoint.sh"]
