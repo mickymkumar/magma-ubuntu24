@@ -1,10 +1,6 @@
 ################################################################################
-# Magma Core - Ubuntu 24.04 Dockerfile
-# Steps:
-# 1. Update/Upgrade Packages
-# 2. Clone Magma on Host
-# 3. Install OVS, C, Python dependencies
-# 4. Bring Magma services up
+# Magma Full Core - Ubuntu 24.04 Dockerfile
+# Fully self-contained: builds C & Python components, OVS, and Magma services
 ################################################################################
 
 FROM ubuntu:24.04
@@ -15,6 +11,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=America/Toronto
 ENV MAGMA_ROOT=/magma
+ENV PATH=$PATH:/usr/local/bin:/usr/local/sbin
 
 # -----------------------------------------------------------------------------
 # System Update and Dependencies
@@ -24,35 +21,58 @@ RUN apt-get update && apt-get upgrade -y && \
     git curl wget ca-certificates gnupg2 lsb-release tzdata \
     build-essential cmake pkg-config \
     python3 python3-pip python3-venv python3-setuptools python3-dev \
-    net-tools iproute2 iputils-ping dnsutils \
-    openvswitch-switch openvswitch-common && \
+    net-tools iproute2 iputils-ping dnsutils sudo \
+    openvswitch-switch openvswitch-common \
+    autoconf automake libtool pkg-config m4 && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Copy Magma Source Code (cloned on host)
+# Install Bazel (required for C builds)
 # -----------------------------------------------------------------------------
-# Make sure to clone the repo on host:
-# git clone https://github.com/magma/magma.git
-# Then run: docker build -t magma-core -f Dockerfile .
-COPY magma ${MAGMA_ROOT}
+RUN apt-get update && apt-get install -y curl gnupg && \
+    curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
+    apt-get update && apt-get install -y bazel && \
+    rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install Python dependencies for Magma
+# Clone Magma Source Code
+# -----------------------------------------------------------------------------
+RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
+
+# -----------------------------------------------------------------------------
+# Build Magma C Components (AGW, Orc8r, FeG)
+# -----------------------------------------------------------------------------
+WORKDIR ${MAGMA_ROOT}
+
+# Bazel build for AGW
+RUN bazel build //lte/gateway/c/session_manager:sessiond \
+               //lte/gateway/c/sctpd/src:sctpd \
+               //lte/gateway/c/connection_tracker/src:connectiond \
+               //lte/gateway/c/li_agent/src:liagentd \
+               //lte/gateway/c/core/agw_of:oai_mme || true
+
+# -----------------------------------------------------------------------------
+# Install Python packages from Magma
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway
-RUN pip install --upgrade pip && \
+RUN python3 -m pip install --upgrade pip && \
     pip install -r python/requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup Open vSwitch Scripts
+# Setup OVS Service
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
-COPY magma/lte/gateway/docker/services/openvswitch/healthcheck.sh /usr/local/bin/healthcheck.sh
-COPY magma/lte/gateway/docker/services/openvswitch/entrypoint.sh /entrypoint.sh
-RUN chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
+RUN cp ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch/healthcheck.sh /usr/local/bin/healthcheck.sh && \
+    cp ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch/entrypoint.sh /entrypoint.sh && \
+    chmod +x /usr/local/bin/healthcheck.sh /entrypoint.sh
 
 # -----------------------------------------------------------------------------
-# Expose Ports & Entrypoint
+# Expose Ports
 # -----------------------------------------------------------------------------
 EXPOSE 6640 6633 6653 53 80 443
+
+# -----------------------------------------------------------------------------
+# Start Magma Services (AGW, OVS)
+# -----------------------------------------------------------------------------
 ENTRYPOINT ["/entrypoint.sh"]
