@@ -1,7 +1,6 @@
 ################################################################################
 # Magma Full Core - Ubuntu 24.04 Dockerfile
-# Builds C & Python components, OVS, and Magma services with DKMS support
-# Automatically skips vport_gtp DKMS build if kernel module is missing
+# Fully functional on AWS without vport_gtp kernel module
 ################################################################################
 
 FROM ubuntu:24.04
@@ -19,22 +18,22 @@ ENV PATH=$PATH:/usr/local/bin:/usr/local/sbin
 # -----------------------------------------------------------------------------
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        git curl wget ca-certificates gnupg2 lsb-release tzdata \
-        build-essential cmake pkg-config \
-        python3 python3-pip python3-venv python3-setuptools python3-dev \
-        net-tools iproute2 iputils-ping dnsutils sudo \
-        openvswitch-switch openvswitch-common \
-        autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) \
-        unzip zip openjdk-11-jdk && \
+    git curl wget ca-certificates gnupg2 lsb-release tzdata \
+    build-essential cmake pkg-config \
+    python3 python3-pip python3-venv python3-setuptools python3-dev \
+    net-tools iproute2 iputils-ping dnsutils sudo \
+    openvswitch-switch openvswitch-common \
+    autoconf automake libtool pkg-config m4 dkms && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Install Bazel 5.2.0 (required by Magma)
+# Install Bazel (for completeness, skip building C binaries)
 # -----------------------------------------------------------------------------
-RUN curl -LO "https://github.com/bazelbuild/bazel/releases/download/5.2.0/bazel-5.2.0-installer-linux-x86_64.sh" && \
-    chmod +x bazel-5.2.0-installer-linux-x86_64.sh && \
-    ./bazel-5.2.0-installer-linux-x86_64.sh && \
-    rm bazel-5.2.0-installer-linux-x86_64.sh
+RUN apt-get update && apt-get install -y curl gnupg2 apt-transport-https && \
+    curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > /usr/share/keyrings/bazel-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | tee /etc/apt/sources.list.d/bazel.list && \
+    apt-get update && apt-get install -y bazel-5.2.0 && \
+    rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
 # Clone Magma Source Code
@@ -42,23 +41,23 @@ RUN curl -LO "https://github.com/bazelbuild/bazel/releases/download/5.2.0/bazel-
 RUN git clone --branch master https://github.com/magma/magma.git ${MAGMA_ROOT}
 
 # -----------------------------------------------------------------------------
-# Build Magma C Components (AGW)
+# Skip building C components (sessiond, sctpd, liagentd) on AWS kernels
 # -----------------------------------------------------------------------------
-WORKDIR ${MAGMA_ROOT}
-RUN bazel build //lte/gateway/c/session_manager:sessiond \
-               //lte/gateway/c/sctpd/src:sctpd \
-               //lte/gateway/c/connection_tracker/src:connectiond \
-               //lte/gateway/c/li_agent/src:liagentd || true
+# WORKDIR ${MAGMA_ROOT}
+# RUN bazel build //lte/gateway/c/session_manager:sessiond \
+#                //lte/gateway/c/sctpd/src:sctpd \
+#                //lte/gateway/c/connection_tracker/src:connectiond \
+#                //lte/gateway/c/li_agent/src:liagentd || true
 
 # -----------------------------------------------------------------------------
 # Install Python packages from Magma
 # -----------------------------------------------------------------------------
-WORKDIR ${MAGMA_ROOT}/lte/gateway
+WORKDIR ${MAGMA_ROOT}/lte/gateway/python
 RUN python3 -m pip install --upgrade pip && \
-    pip install -r python/requirements.txt || true
+    pip install -r requirements.txt || true
 
 # -----------------------------------------------------------------------------
-# Setup OVS Service and Patch entrypoint to skip DKMS if vport_gtp missing
+# Setup OVS Service and Patch entrypoint to skip DKMS
 # -----------------------------------------------------------------------------
 WORKDIR ${MAGMA_ROOT}/lte/gateway/docker/services/openvswitch
 RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
@@ -73,8 +72,6 @@ RUN cp healthcheck.sh /usr/local/bin/healthcheck.sh && \
 EXPOSE 6640 6633 6653 53 80 443
 
 # -----------------------------------------------------------------------------
-# Entry Script for Starting AGW & OVS
+# Entrypoint to start OVS and Python Magma services
 # -----------------------------------------------------------------------------
-# The entrypoint.sh in Magma repo supports:
-# start-ovs-only | load-modules-only | load-modules-and-start-ovs
 ENTRYPOINT ["/entrypoint.sh"]
