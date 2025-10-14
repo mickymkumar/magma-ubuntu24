@@ -1,9 +1,11 @@
 ################################################################################
-# Magma Gateway Dockerfile (Ubuntu 24.04, Python 3.10, EC2 Ready)
+# Magma Gateway Dockerfile (Ubuntu 24.04, EC2 Ready, Python 3.12)
 ################################################################################
 
+ARG CPU_ARCH=x86_64
+ARG DEB_PORT=amd64
 ARG OS_DIST=ubuntu
-ARG OS_RELEASE=24.04
+ARG OS_RELEASE=noble
 
 # -----------------------------------------------------------------------------
 # Stage 1: Base builder (system + python)
@@ -12,22 +14,19 @@ FROM ${OS_DIST}:${OS_RELEASE} AS base
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install system dependencies + Python 3.10
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo net-tools iproute2 bridge-utils iputils-ping tcpdump iptables \
-    python3.10 python3.10-venv python3.10-dev python3-pip \
+    python3 python3-venv python3-dev python3-pip \
     curl wget git unzip make build-essential cmake pkg-config software-properties-common \
     libsystemd-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libgmp-dev zlib1g-dev rsync zip \
     ifupdown lsb-release gnupg supervisor autoconf automake libtool lksctp-tools libsctp-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Create magma user
 RUN useradd -ms /bin/bash magma && echo "magma ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 WORKDIR /home/magma
 VOLUME /home/magma
 
-# Python virtual environment
-RUN python3.10 -m venv /opt/venv \
+RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel cython
 
 # -----------------------------------------------------------------------------
@@ -36,8 +35,6 @@ RUN python3.10 -m venv /opt/venv \
 FROM base AS magma-src
 WORKDIR /magma
 RUN git clone https://github.com/magma/magma.git . || true
-# Optional: pin to a stable release
-# RUN git checkout v1.9.0
 
 # -----------------------------------------------------------------------------
 # Stage 3: Python build (Bazel python_executables)
@@ -48,7 +45,7 @@ ENV TZ=Etc/UTC
 ENV PIP_CACHE_HOME="~/.pipcache"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io git lsb-release libsystemd-dev pkg-config python3.10-dev python3-pip sudo wget \
+    docker.io git lsb-release libsystemd-dev pkg-config python3-dev python3-pip sudo wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Bazelisk
@@ -61,7 +58,7 @@ RUN bazel build //lte/gateway/release:python_executables_tar \
                //lte/gateway/release:dhcp_helper_cli_tar
 
 # -----------------------------------------------------------------------------
-# Stage 4: C build (sessiond, sctpd, connectiond, oai_mme)
+# Stage 4: C build (sessiond, sctpd, etc.)
 # -----------------------------------------------------------------------------
 FROM magma-src AS magma-c
 ENV TZ=Etc/UTC
@@ -81,7 +78,6 @@ RUN wget -O /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/relea
     && ln -s /usr/local/bin/bazelisk /usr/bin/bazel
 
 WORKDIR /magma
-# Build only targets that exist (remove li_agent)
 RUN bazel build --config=production \
     //lte/gateway/c/sctpd/src:sctpd \
     //lte/gateway/c/connection_tracker/src:connectiond \
@@ -98,13 +94,13 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 iptables iputils-ping net-tools bridge-utils tcpdump \
-    python3.10 python3.10-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
+    python3 python3-venv python3-pip redis-server ethtool sudo curl wget vim tzdata \
     libgoogle-glog-dev libyaml-cpp-dev libsctp-dev libssl-dev libpcap-dev \
     openvswitch-switch openvswitch-common \
     && rm -rf /var/lib/apt/lists/*
 
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-RUN python3.10 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel
+RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --upgrade pip setuptools wheel
 
 # Copy Python env and Magma source
 COPY --from=magma-python /magma /magma
