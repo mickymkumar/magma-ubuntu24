@@ -22,7 +22,10 @@ RUN apt-get update && apt-get upgrade -y && \
     net-tools iproute2 iputils-ping dnsutils sudo \
     openvswitch-switch openvswitch-common \
     autoconf automake libtool pkg-config m4 dkms linux-headers-$(uname -r) \
-    apt-transport-https && \
+    apt-transport-https \
+    libssl-dev libffi-dev libsqlite3-dev libpq-dev libbz2-dev \
+    libreadline-dev libncurses5-dev libncursesw5-dev tk-dev \
+    libxml2-dev libxmlsec1-dev software-properties-common jq vim && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
@@ -86,6 +89,9 @@ for bin in session_manager/sctpd connection_tracker/connectiond li_agent/liagent
 done\n\
 tail -f /dev/null' > /start_magma.sh && chmod +x /start_magma.sh
 
+# -----------------------------------------------------------------------------
+# Expose required ports
+# -----------------------------------------------------------------------------
 EXPOSE 6640 6633 6653 53 80 443
 
 ENTRYPOINT ["/start_magma.sh"]
